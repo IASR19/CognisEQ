@@ -14,245 +14,13 @@ from PyQt5.QtCore import QUrl
 import serial.tools.list_ports
 from serial.tools import list_ports
 from datetime import datetime
-
-
-
-class TrainingWidget(QWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.parent = parent
-        self.initUI()
-        print(f"Conexão serial no treinamento: {self.serial_connection}")
-
-
-    def initUI(self):
-        layout = QVBoxLayout()
-
-        # Barra de progresso
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setRange(0,   43)
-        layout.addWidget(QLabel("Treinamento em andamento..."))
-        layout.addWidget(self.progress_bar)
-
-        # Exibição de valores dos sensores
-        self.sensor_values_label = QLabel("Valores dos Sensores:")
-        layout.addWidget(self.sensor_values_label)
-
-        # Campo para GSR e BPM
-        self.gsr_label = QLabel("GSR: -")  # Inicializa o gsr_label
-        self.bpm_label = QLabel("BPM: -")  # Inicializa o bpm_label
-        layout.addWidget(self.gsr_label)
-        layout.addWidget(self.bpm_label)
-
-        # Exibição do sentimento associado
-        self.sentiment_label = QLabel("Sentimento Atual: -")
-        layout.addWidget(self.sentiment_label)
-
-        # Botão para avançar manualmente
-        self.skip_button = QPushButton("Avançar para Coleta Real")
-        self.skip_button.clicked.connect(self.skip_training)
-        layout.addWidget(self.skip_button)
-
-        self.setLayout(layout)
-
-        # Timer para a barra de progresso
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.update_progress)
-        self.timer.start(1000)
-        print("Timer de coleta real iniciado.")
-
-
-
-
-    def start_training(self):
-        training_video_path = "/home/igsr/Área de trabalho/NencTech/NeuroEQ/treinamento/treinamento.mp4"
-
-        if not os.path.exists(training_video_path):
-            QMessageBox.critical(self, "Erro", "Arquivo de treinamento não encontrado!")
-            return
-    
-        # Configura o vídeo de treinamento
-        self.media_player.setMedia(QMediaContent(QUrl.fromLocalFile(training_video_path)))
-        self.media_player.play()
-
-        self.status_label.setText("Treinamento em andamento...")
-
-        # Timer para encerrar treinamento
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.end_training)
-        self.timer.start(43000)  # 43 segundos
-
-    def end_training(self):
-        self.media_player.stop()
-        self.timer.stop()
-
-        QMessageBox.information(self, "Treinamento Concluído", "Treinamento finalizado!")
-
-        # Transição para a coleta real
-        self.parent.start_main_window(self.parent.training_params)
-
-
-
-class SetupWidget(QWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.parent = parent
-        self.dynamic_name_fields = []
-        self.incentive_file = None
-        self.collection_mode = None
-        self.collection_time = None
-        self.initUI()
-
-    def refresh_ports(self):
-        self.port_combo.clear()
-        ports = list_ports.comports()
-        for port in ports:
-            self.port_combo.addItem(port.device)
-
-
-
-    def initUI(self):
-        layout = QVBoxLayout()
-
-        # Número de Participantes
-        self.num_people_label = QLabel("Número de Participantes:")
-        self.num_people_spinbox = QSpinBox()
-        self.num_people_spinbox.setRange(1, 8)
-        self.num_people_spinbox.valueChanged.connect(self.update_name_fields)
-        layout.addWidget(self.num_people_label)
-        layout.addWidget(self.num_people_spinbox)
-
-        # Nome dos Participantes
-        self.name_fields_layout = QVBoxLayout()
-        layout.addLayout(self.name_fields_layout)
-        self.update_name_fields()
-
-        # Seleção de Porta Serial
-        self.port_label = QLabel("Selecionar Porta Serial:")
-        self.port_combo = QComboBox()
-        self.refresh_ports()  # Popula o combobox com as portas disponíveis
-        layout.addWidget(self.port_label)
-        layout.addWidget(self.port_combo)
-
-        # Botão para atualizar portas
-        self.refresh_button = QPushButton("Atualizar Portas")
-        self.refresh_button.clicked.connect(self.refresh_ports)
-        layout.addWidget(self.refresh_button)
-
-        # Arquivo de Incentivo
-        self.incentive_label = QLabel("Arquivo de Incentivo:")
-        self.file_button = QPushButton("Selecionar Arquivo")
-        self.file_button.clicked.connect(self.open_file_dialog)
-        layout.addWidget(self.incentive_label)
-        layout.addWidget(self.file_button)
-
-        # Modo de Coleta
-        self.mode_label = QLabel("Modo de Coleta:")
-        self.mode_combo = QComboBox()
-        self.mode_combo.addItems(["Livre", "Tempo Fixo"])
-        self.mode_combo.currentIndexChanged.connect(self.toggle_time_input)
-        layout.addWidget(self.mode_label)
-        layout.addWidget(self.mode_combo)
-
-        # Tempo de Coleta
-        self.time_label = QLabel("Tempo de Coleta (segundos):")
-        self.time_input = QLineEdit()
-        self.time_input.setPlaceholderText("Digite o tempo em segundos")
-        self.time_label.hide()
-        self.time_input.hide()
-        layout.addWidget(self.time_label)
-        layout.addWidget(self.time_input)
-
-        # Botão Iniciar
-        self.start_button = QPushButton("Iniciar")
-        self.start_button.clicked.connect(self.start)
-        layout.addWidget(self.start_button)
-
-        self.setLayout(layout)
-        self.apply_styles()
-
-    def apply_styles(self):
-        self.setStyleSheet("""
-            QWidget {
-                background-color: #f0f0f0;
-                font-family: Arial, sans-serif;
-            }
-            QLabel {
-                font-size: 14px;
-                color: #333;
-            }
-            QLineEdit, QSpinBox, QComboBox {
-                padding: 5px;
-                font-size: 14px;
-                border: 1px solid #ccc;
-                border-radius: 4px;
-            }
-            QPushButton {
-                background-color: #007bff;
-                color: white;
-                padding: 10px;
-                border: none;
-                border-radius: 4px;
-                font-size: 14px;
-            }
-            QPushButton:hover {
-                background-color: #0056b3;
-            }
-        """)
-
-    def update_name_fields(self):
-        for field in self.dynamic_name_fields:
-            field.deleteLater()
-        self.dynamic_name_fields.clear()
-        for i in range(self.num_people_spinbox.value()):
-            name_field = QLineEdit()
-            name_field.setPlaceholderText(f"Nome do Participante {i + 1}")
-            self.dynamic_name_fields.append(name_field)
-            self.name_fields_layout.addWidget(name_field)
-
-    def toggle_time_input(self):
-        if self.mode_combo.currentText() == "Tempo Fixo":
-            self.time_label.show()
-            self.time_input.show()
-        else:
-            self.time_label.hide()
-            self.time_input.hide()
-
-    def open_file_dialog(self):
-        file_path, _ = QFileDialog.getOpenFileName(self, "Selecionar Arquivo de Incentivo", "", "Imagens e Vídeos (*.png *.jpg *.mp4)")
-        if file_path:
-            self.incentive_file = file_path
-            QMessageBox.information(self, "Arquivo Selecionado", f"{file_path}")
-
-    def start(self):
-        participant_names = [field.text() for field in self.dynamic_name_fields]
-        num_people = self.num_people_spinbox.value()
-        self.collection_mode = self.mode_combo.currentText()
-        self.collection_time = self.time_input.text() if self.collection_mode == "Tempo Fixo" else None
-        self.selected_port = self.port_combo.currentText()  # Porta serial selecionada
-
-        if not self.incentive_file or not all(participant_names):
-            QMessageBox.critical(self, "Erro", "Preencha todos os campos e selecione o incentivo.")
-            return
-        if self.collection_mode == "Tempo Fixo" and (not self.collection_time or not self.collection_time.isdigit()):
-            QMessageBox.critical(self, "Erro", "Digite um tempo válido para coleta em segundos.")
-            return
-        if not self.selected_port:
-            QMessageBox.critical(self, "Erro", "Selecione uma porta serial.")
-            return
-
-        # Passa para o MainApp
-        self.parent.start_training_screen(
-            num_people,
-            participant_names,
-            self.collection_mode,
-            int(self.collection_time) if self.collection_time else None,
-            self.selected_port  # Porta serial selecionada
-        )
-
-
-
 import subprocess  # Para abrir o vídeo no reprodutor padrão
+import serial  # Para comunicação serial
+from PyQt5.QtWidgets import QSizePolicy
+from PyQt5.QtGui import QPainter
+
+
+
 
 class TrainingWidget(QWidget):
     def __init__(self, parent, num_people, names, mode, collection_time, serial_port):
@@ -384,23 +152,384 @@ class TrainingWidget(QWidget):
     def skip_training(self):
         self.timer.stop()
         self.complete_training()
-
+        
+    
     def complete_training(self):
-        # Não feche a conexão serial aqui
-        self.parent.training_data = self.training_data
+        """ Finaliza o treinamento e inicia a coleta real. """
+        self.timer.stop()
+
+        QMessageBox.information(self, "Treinamento Concluído", "Treinamento finalizado!")
+
+        # Garantir que a conexão serial esteja aberta corretamente antes de passar
+        try:
+            serial_connection = serial.Serial(self.serial_port, 115200, timeout=1)
+        except Exception as e:
+            QMessageBox.critical(self, "Erro", f"Não foi possível abrir a conexão serial.\nErro: {e}")
+            return
+
+        # Passar para a tela de coleta real com a conexão serial aberta
         self.parent.start_main_window(
-            self.num_people, self.names, self.mode, self.collection_time, self.serial_connection
+            self.num_people,
+            self.names,
+            self.mode,
+            self.collection_time,
+            serial_connection  # ✅ Agora passamos um objeto válido de `serial.Serial`
         )
 
 
 
+    def resizeEvent(self, event):
+        """ Redimensionamento na TrainingWidget não precisa tratar imagens """
+        super().resizeEvent(event)
+        
+        
+    
+    def update_image(self):
+        """ Atualiza a imagem para se ajustar proporcionalmente à tela """
+        if not self.original_pixmap or self.original_pixmap.isNull():
+            return  # Evita erro caso a imagem não tenha sido carregada corretamente
+
+        screen_rect = self.screen().availableGeometry()
+        screen_width, screen_height = screen_rect.width(), screen_rect.height()
+
+        pixmap_width = self.original_pixmap.width()
+        pixmap_height = self.original_pixmap.height()
+
+        if pixmap_width == 0 or pixmap_height == 0:
+            return  # Evita divisão por zero
+
+        scale_factor = min(screen_width / pixmap_width, screen_height / pixmap_height, 1.0)
+        new_width = int(pixmap_width * scale_factor)
+        new_height = int(pixmap_height * scale_factor)
+
+        resized_pixmap = self.original_pixmap.scaled(new_width, new_height, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        self.stimulus_label.setPixmap(resized_pixmap)
+        self.stimulus_label.setAlignment(Qt.AlignCenter)
+
+        
+    def closeEvent(self, event):
+        """ Para o vídeo ao fechar a janela """
+        if hasattr(self, 'media_player') and self.media_player.state() == QMediaPlayer.PlayingState:
+            self.media_player.stop()
+        event.accept()
 
 
 
-import serial  # Para comunicação serial
+
+
+class SetupWidget(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.parent = parent
+        self.stimuli = []  # Lista de estímulos (arquivos + tempo)
+        self.dynamic_name_fields = []  # Inicializa como uma lista vazia
+        self.incentive_file = None  # Inicializa como None para evitar erro
+        self.initUI()
+        
+    def refresh_ports(self):
+        self.port_combo.clear()
+        ports = list_ports.comports()
+        for port in ports:
+            self.port_combo.addItem(port.device)
+
+
+
+    def initUI(self):
+        layout = QVBoxLayout()
+
+        # Número de Participantes
+        self.num_people_label = QLabel("Número de Participantes:")
+        self.num_people_spinbox = QSpinBox()
+        self.num_people_spinbox.setRange(1, 8)
+        self.num_people_spinbox.valueChanged.connect(self.update_name_fields)
+        layout.addWidget(self.num_people_label)
+        layout.addWidget(self.num_people_spinbox)
+
+        # Nome dos Participantes
+        self.name_fields_layout = QVBoxLayout()
+        layout.addLayout(self.name_fields_layout)
+        self.update_name_fields()
+
+        # Seleção de Porta Serial
+        self.port_label = QLabel("Selecionar Porta Serial:")
+        self.port_combo = QComboBox()
+        self.refresh_ports()  # Popula o combobox com as portas disponíveis
+        layout.addWidget(self.port_label)
+        layout.addWidget(self.port_combo)
+
+        # Botão para atualizar portas
+        self.refresh_button = QPushButton("Atualizar Portas")
+        self.refresh_button.clicked.connect(self.refresh_ports)
+        layout.addWidget(self.refresh_button)
+        
+                # Número de estímulos
+        self.num_stimuli_label = QLabel("Quantos estímulos deseja apresentar?")
+        self.num_stimuli_spinbox = QSpinBox()
+        self.num_stimuli_spinbox.setRange(1, 10)  # Máximo de 10 estímulos
+        self.num_stimuli_spinbox.valueChanged.connect(self.create_stimuli_fields)
+        layout.addWidget(self.num_stimuli_label)
+        layout.addWidget(self.num_stimuli_spinbox)
+
+        # Área onde os campos de estímulos serão adicionados
+        self.stimuli_layout = QVBoxLayout()
+        layout.addLayout(self.stimuli_layout)
+
+
+        self.setLayout(layout)
+
+        def create_stimuli_fields(self):
+            """ Cria dinamicamente os campos para upload e tempo de cada estímulo. """
+            # Remove os campos anteriores, se existirem
+            while self.stimuli_layout.count():
+                item = self.stimuli_layout.takeAt(0)
+                if item.widget():
+                    item.widget().deleteLater()
+
+            self.stimuli = []  # Reseta a lista de estímulos
+
+            # Criar novos campos
+            for i in range(self.num_stimuli_spinbox.value()):
+                file_button = QPushButton(f"Selecionar Estímulo {i+1}")
+                file_button.clicked.connect(lambda _, idx=i: self.select_stimulus(idx))
+                time_input = QLineEdit()
+                time_input.setPlaceholderText("Tempo de exibição (segundos)")
+
+                self.stimuli_layout.addWidget(file_button)
+                self.stimuli_layout.addWidget(time_input)
+                self.stimuli.append({"file": None, "time_input": time_input, "button": file_button})
+
+        def select_stimulus(self, index):
+            """ Permite selecionar um arquivo de estímulo. """
+            file_path, _ = QFileDialog.getOpenFileName(self, "Selecionar Estímulo", "", "Imagens e Vídeos (*.png *.jpg *.mp4)")
+            if file_path:
+                self.stimuli[index]["file"] = file_path
+                self.stimuli[index]["button"].setText(f"Selecionado: {file_path.split('/')[-1]}")
+                print(f"Arquivo selecionado para estímulo {index + 1}: {file_path}")  # 🔍 Debug
+
+
+        # Modo de Coleta
+        self.mode_label = QLabel("Modo de Coleta:")
+        self.mode_combo = QComboBox()
+        self.mode_combo.addItems(["Livre", "Tempo Fixo"])
+        self.mode_combo.currentIndexChanged.connect(self.toggle_time_input)
+        layout.addWidget(self.mode_label)
+        layout.addWidget(self.mode_combo)
+
+        # Tempo de Coleta
+        self.time_label = QLabel("Tempo de Coleta (segundos):")
+        self.time_input = QLineEdit()
+        self.time_input.setPlaceholderText("Digite o tempo em segundos")
+        self.time_label.hide()
+        self.time_input.hide()
+        layout.addWidget(self.time_label)
+        layout.addWidget(self.time_input)
+
+        # Botão Iniciar
+        self.start_button = QPushButton("Iniciar")
+        self.start_button.clicked.connect(self.start)
+        layout.addWidget(self.start_button)
+
+        self.setLayout(layout)
+        self.apply_styles()
+
+    def apply_styles(self):
+        self.setStyleSheet("""
+            QWidget {
+                background-color: #f0f0f0;
+                font-family: Arial, sans-serif;
+            }
+            QLabel {
+                font-size: 14px;
+                color: #333;
+            }
+            QLineEdit, QSpinBox, QComboBox {
+                padding: 5px;
+                font-size: 14px;
+                border: 1px solid #ccc;
+                border-radius: 4px;
+            }
+            QPushButton {
+                background-color: #007bff;
+                color: white;
+                padding: 10px;
+                border: none;
+                border-radius: 4px;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background-color: #0056b3;
+            }
+        """)
+
+    def update_name_fields(self):
+        for field in self.dynamic_name_fields:
+            field.deleteLater()
+        self.dynamic_name_fields.clear()
+        for i in range(self.num_people_spinbox.value()):
+            name_field = QLineEdit()
+            name_field.setPlaceholderText(f"Nome do Participante {i + 1}")
+            self.dynamic_name_fields.append(name_field)
+            self.name_fields_layout.addWidget(name_field)
+            
+    def create_stimuli_fields(self):
+        """ Cria dinamicamente os campos para upload e tempo de cada estímulo. """
+        # Remove os campos anteriores, se existirem
+        while self.stimuli_layout.count():
+            item = self.stimuli_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        self.stimuli = []  # Reseta a lista de estímulos
+
+        # Criar novos campos
+        for i in range(self.num_stimuli_spinbox.value()):
+            file_button = QPushButton(f"Selecionar Estímulo {i+1}")
+            file_button.clicked.connect(lambda _, idx=i: self.select_stimulus(idx))
+            time_input = QLineEdit()
+            time_input.setPlaceholderText("Tempo de exibição (segundos)")
+
+            self.stimuli_layout.addWidget(file_button)
+            self.stimuli_layout.addWidget(time_input)
+            self.stimuli.append({"file": None, "time_input": time_input, "button": file_button})
+            
+    def start_presentation(self):
+        """ Inicia a apresentação dos estímulos em sequência. """
+        stimuli_sequence = []
+        for stim in self.stimuli:
+            file_path = stim["file"]
+            time_value = stim["time_input"].text()
+
+            if not file_path or not time_value.isdigit():
+                QMessageBox.critical(self, "Erro", "Todos os estímulos precisam de um arquivo e tempo válido.")
+                return
+
+            stimuli_sequence.append((file_path, int(time_value)))
+
+        
+        
+    def select_stimulus(self, index):
+        """ Permite selecionar um arquivo de estímulo. """
+        file_path, _ = QFileDialog.getOpenFileName(self, "Selecionar Estímulo", "", "Imagens e Vídeos (*.png *.jpg *.mp4)")
+        if file_path:
+            self.stimuli[index]["file"] = file_path
+            self.stimuli[index]["button"].setText(f"Selecionado: {file_path.split('/')[-1]}")
+
+
+
+
+    def toggle_time_input(self):
+        if self.mode_combo.currentText() == "Tempo Fixo":
+            self.time_label.show()
+            self.time_input.show()
+        else:
+            self.time_label.hide()
+            self.time_input.hide()
+
+    def open_file_dialog(self):
+        file_path, _ = QFileDialog.getOpenFileName(self, "Selecionar Arquivo de Incentivo", "", "Imagens e Vídeos (*.png *.jpg *.mp4)")
+        if file_path:
+            self.incentive_file = file_path
+            QMessageBox.information(self, "Arquivo Selecionado", f"{file_path}")
+
+    def start(self):
+        participant_names = [field.text() for field in self.dynamic_name_fields]
+        num_people = self.num_people_spinbox.value()
+        self.collection_mode = self.mode_combo.currentText()
+        self.collection_time = self.time_input.text() if self.collection_mode == "Tempo Fixo" else None
+        self.selected_port = self.port_combo.currentText()  # Porta serial selecionada
+
+        # Criar a sequência de estímulos corretamente
+        self.parent.stimuli_sequence = []
+        for stim in self.stimuli:
+            file_path = stim["file"]
+            time_value = stim["time_input"].text()
+
+            if not file_path or not time_value.isdigit():
+                QMessageBox.critical(self, "Erro", "Todos os estímulos precisam de um arquivo e tempo válido.")
+                return
+
+            self.parent.stimuli_sequence.append((file_path, int(time_value)))
+
+        print(f"Estímulos armazenados na SetupWidget: {self.parent.stimuli_sequence}")  # 🔍 Debug
+
+        if not self.parent.stimuli_sequence:
+            QMessageBox.critical(self, "Erro", "Nenhum estímulo foi armazenado!")
+            return
+
+        # Passa para o MainApp
+        self.parent.start_training_screen(
+            num_people,
+            participant_names,
+            self.collection_mode,
+            int(self.collection_time) if self.collection_time else None,
+            self.selected_port  # Porta serial selecionada
+        )
+
+
+class StimulusWindow(QWidget):
+    def __init__(self, stimuli_sequence):
+        super().__init__()
+        self.stimuli_sequence = stimuli_sequence if stimuli_sequence else []
+        self.current_index = 0
+        self.pixmap = None  # Armazena a imagem atual
+        self.initUI()
+
+    def initUI(self):
+        self.setWindowTitle("Estímulo")
+        self.showFullScreen()  # Abrir em tela cheia para evitar problemas de escala
+
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.show_next_stimulus)
+
+        self.show_next_stimulus()  # Exibir o primeiro estímulo
+
+    def show_next_stimulus(self):
+        """ Exibe o próximo estímulo da lista. """
+        if not self.stimuli_sequence or self.current_index >= len(self.stimuli_sequence):
+            print("Todos os estímulos foram apresentados. Fechando janela.")
+            self.close()
+            return
+
+        file_path, duration = self.stimuli_sequence[self.current_index]
+        print(f"Tentando exibir: {file_path} por {duration} segundos")
+
+        if not os.path.exists(file_path):
+            print(f"Erro: O arquivo {file_path} não existe!")
+            return
+
+        self.current_index += 1  # Avança para o próximo estímulo
+
+        if file_path.endswith(('.png', '.jpg', '.jpeg')):
+            self.pixmap = QPixmap(file_path)
+            if self.pixmap.isNull():
+                print(f"Erro ao carregar a imagem: {file_path}")
+                return
+
+            print(f"Imagem carregada com sucesso: {file_path}")
+
+            self.update()  # Força a atualização do widget para desenhar a imagem
+
+        self.timer.start(duration * 1000)  # Trocar para o próximo estímulo
+
+    def paintEvent(self, event):
+        """ Desenha a imagem na tela. """
+        if self.pixmap:
+            painter = QPainter(self)
+            scaled_pixmap = self.pixmap.scaled(self.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            x = (self.width() - scaled_pixmap.width()) // 2
+            y = (self.height() - scaled_pixmap.height()) // 2
+            painter.drawPixmap(x, y, scaled_pixmap)
+
+
+
+
+
+
+
+
 
 class RealTimeEmotionWidget(QWidget):
-    def __init__(self, num_people, names, incentive_file, mode, collection_time, serial_connection, training_data):
+    def __init__(self, num_people, names, incentive_file, mode, collection_time, serial_connection, training_data, stimuli_sequence):
         super().__init__()
         self.num_people = num_people
         self.names = names
@@ -409,6 +538,7 @@ class RealTimeEmotionWidget(QWidget):
         self.collection_time = collection_time
         self.serial_connection = serial_connection
         self.training_data = training_data  # Salva os dados de treinamento
+        self.stimuli_sequence = stimuli_sequence
         print(f"Conexão serial na coleta real: {self.serial_connection}")
 
 
@@ -430,23 +560,25 @@ class RealTimeEmotionWidget(QWidget):
     def initUI(self):
         main_layout = QVBoxLayout()
 
-        # Incentivo Centralizado
-        incentive_layout = QHBoxLayout()
-        if self.incentive_file.endswith(('.png', '.jpg', '.jpeg')):
-            incentive_label = QLabel()
-            pixmap = QPixmap(self.incentive_file).scaled(400, 300, Qt.KeepAspectRatio)
-            incentive_label.setPixmap(pixmap)
-            incentive_layout.addWidget(incentive_label, alignment=Qt.AlignCenter)
-        else:
-            incentive_label = QLabel("Vídeo de Incentivo: Reproduza manualmente")
-            incentive_layout.addWidget(incentive_label, alignment=Qt.AlignCenter)
-        main_layout.addLayout(incentive_layout)
-
         # Logs
         self.logs = QTextEdit()
         self.logs.setReadOnly(True)
         self.logs.setPlaceholderText("Logs de Coleta")
         main_layout.addWidget(self.logs)
+        
+        # Criar uma cópia da sequência de estímulos para evitar modificações inesperadas
+        self.stimuli_sequence = self.stimuli_sequence if self.stimuli_sequence else []
+        
+        print(f"Passando sequência de estímulos para StimulusWindow: {self.stimuli_sequence}")  # 🔍 Debug
+        
+        if not self.stimuli_sequence:
+            print("Erro: Nenhum estímulo foi passado para StimulusWindow!")  # 🔍 Debug
+            QMessageBox.critical(self, "Erro", "Nenhum estímulo foi armazenado corretamente!")
+            return
+
+        # Criar a janela de estímulos corretamente
+        self.stimulus_window = StimulusWindow(self.stimuli_sequence)
+        self.stimulus_window.show()
 
         # Gráficos de Índice Emocional
         self.figures = {}
@@ -491,7 +623,9 @@ class RealTimeEmotionWidget(QWidget):
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_scores)
         self.timer.start(1000)
+
         print("Timer de coleta real iniciado.")
+
 
 
     
@@ -603,6 +737,7 @@ class RealTimeEmotionWidget(QWidget):
     def update_scores(self):
         if not self.serial_connection or not self.serial_connection.is_open:
             print("Conexão serial inativa durante a atualização dos scores.")
+            return
         else:
             print("Conexão serial ativa. Lendo dados...")
 
@@ -659,6 +794,8 @@ class RealTimeEmotionWidget(QWidget):
 
                     # Atualiza os logs com os dados reais
                     self.logs.append(f"{name} | BPM: {bpm}, GSR: {gsr}, Sentimento: {closest_sentiment}")
+                    self.logs.ensureCursorVisible()  # Faz com que os logs rolem automaticamente para o final
+
                     self.gsr_ecg_values.append([name, bpm, gsr, closest_sentiment])
 
                     # Atualiza os gráficos com base nos valores do sentimento
@@ -670,6 +807,8 @@ class RealTimeEmotionWidget(QWidget):
                     ax.set_ylim(-1.1, 1.1)  # Ajusta o eixo Y para refletir os valores dos sentimentos
                     ax.legend()
                     self.figures[name].canvas.draw()
+                    self.figures[name].canvas.flush_events()  # Garante que o gráfico seja atualizado em tempo real
+
                     print(f"Atualizando gráficos para {name} com BPM: {bpm}, GSR: {gsr}, Sentimento: {closest_sentiment}")
 
 
@@ -696,6 +835,8 @@ class RealTimeEmotionWidget(QWidget):
                     closest_sentiment = sentimento
 
             return closest_sentiment
+        self.repaint()  # Força o PyQt a redesenhar os componentes visuais
+
         print(f"Dados atualizados para gráficos e logs: {self.gsr_ecg_values}")
 
 
@@ -788,6 +929,7 @@ class MainApp(QStackedWidget):
         self.setup_widget = SetupWidget(self)
         self.addWidget(self.setup_widget)
         self.setCurrentWidget(self.setup_widget)
+        self.stimuli_sequence = []
         # Armazenar dados de treinamento associados a sentimentos
         self.training_data = {
             "Alegria": {"GSR": [], "BPM": []},
@@ -819,14 +961,53 @@ class MainApp(QStackedWidget):
         # Armazena os dados de GSR e BPM no sentimento correspondente
         self.training_data[sentimento]["GSR"].append(gsr)
         self.training_data[sentimento]["BPM"].append(bpm)
-
+        
+    
     def start_main_window(self, num_people, names, mode, collection_time, serial_connection):
-        self.serial_connection = serial_connection  # Salve a conexão no contexto principal
+        """ Inicia a tela de coleta real após o treinamento. """
+        if not isinstance(serial_connection, serial.Serial):
+            QMessageBox.critical(self, "Erro", "A conexão serial não foi aberta corretamente.")
+            return
+
+        self.serial_connection = serial_connection  # ✅ Agora garantimos que a conexão serial é válida
+        print(f"Passando sequência de estímulos para RealTimeEmotionWidget: {self.stimuli_sequence}")  # 🔍 Debug
+
+        if not self.stimuli_sequence:
+            print("Erro: Nenhum estímulo foi armazenado antes da coleta real!")  # 🔍 Debug
+            QMessageBox.critical(self, "Erro", "Nenhum estímulo foi armazenado!")
+            return
+
         self.realtime_emotion_widget = RealTimeEmotionWidget(
-            num_people, names, self.setup_widget.incentive_file, mode, collection_time, self.serial_connection, self.training_data
+            num_people, names, self.setup_widget.incentive_file, mode, collection_time, self.serial_connection, self.training_data, self.stimuli_sequence
         )
         self.addWidget(self.realtime_emotion_widget)
         self.setCurrentWidget(self.realtime_emotion_widget)
+
+
+
+    def start_stimulus_presentation(self, stimuli_sequence):
+        print(f"Iniciando apresentação de estímulos: {stimuli_sequence}")  # 🔍 Debug: Verifica os arquivos recebidos
+
+        # Criar uma cópia segura dos estímulos
+        stimuli_sequence = list(stimuli_sequence)
+
+        # Verificar se a lista está vazia
+        if not stimuli_sequence:
+            print("Erro: Nenhum estímulo foi recebido!")  # 🔍 Debug
+            return
+
+        # Verificar se os arquivos existem
+        for file_path, _ in stimuli_sequence:
+            if not os.path.exists(file_path):
+                print(f"Erro: O arquivo {file_path} não existe!")  # 🔍 Debug
+                return
+
+        self.stimulus_window = StimulusWindow(stimuli_sequence)
+        self.stimulus_window.show()
+
+
+
+
 
 if __name__ == '__main__':
     from PyQt5.QtWidgets import QApplication
