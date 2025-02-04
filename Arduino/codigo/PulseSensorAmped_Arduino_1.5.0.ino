@@ -52,7 +52,7 @@ void loop(){
       }
 
       // Leitura do sensor GSR
-      int gsrValue = analogRead(gsrPins[i]);
+      double gsrValue = (1000*1.0/analogRead(gsrPins[i]));
 
       // Exibir BPM e GSR no Serial
       Serial.print("Pessoa ");
@@ -60,7 +60,7 @@ void loop(){
       Serial.print(" - BPM: ");
       Serial.print(BPM[i]);
       Serial.print(", GSR: ");
-      Serial.println(gsrValue);
+      Serial.println(gsrValue, 4);
     } else {
       // Se o canal não estiver ativo, exibe valores zerados
       Serial.print("Pessoa ");
