@@ -5,8 +5,8 @@
 #define SERIAL_PLOTTER 2
 
 // Definição de pinos para 8 sensores de pulso e 8 sensores GSR
-const int pulsePins[8] = {A0, A2, A4, A6, A8, A10, A12, A14};  
-const int gsrPins[8] = {A1, A3, A5, A7, A9, A11, A13, A15};    
+const int pulsePins[8] = {A2, A3};  
+const int gsrPins[8] = {A0, A1};    
 
 // Variáveis dos sensores de pulso
 int blinkPin = 13;                
@@ -21,7 +21,7 @@ volatile boolean Pulse[8] = {false};
 volatile boolean QS[8] = {false}; 
 
 // Flag para canais ativos (ajuste para ativar/desativar canais)
-bool activeChannels[8] = {true, false, false, false, false, false, false, false};  
+bool activeChannels[8] = {true, true, false, false, false, false, false, false};  
 
 // Configuração da saída no Serial
 static int outputType = SERIAL_PLOTTER;
@@ -52,7 +52,7 @@ void loop(){
       }
 
       // Leitura do sensor GSR
-      double gsrValue = (1000*1.0/analogRead(gsrPins[i]));
+      double gsrValue = (1000*3.0/analogRead(gsrPins[i]));
 
       // Exibir BPM e GSR no Serial
       Serial.print("Pessoa ");
