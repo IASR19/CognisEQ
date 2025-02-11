@@ -3,6 +3,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, QTimer
 import matplotlib.pyplot as plt
+import re
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from PyQt5.QtGui import QPixmap
 import random  # For simulated score values
@@ -20,8 +21,41 @@ from PyQt5.QtWidgets import QSizePolicy
 from PyQt5.QtGui import QPainter
 
 
+def calcular_coeficiente_emocional(bpm, gsr):
+    """
+    Calcula o coeficiente emocional e classifica em níveis de positivo, neutro e negativo.
+    """
+
+    # Normalização do BPM (faixa esperada: 60 a 120)
+    bpm_normalizado = min(max((bpm - 60) / 60, -1), 1)  # Transforma a faixa [60, 120] para [-1, 1]
+
+    # Normalização do GSR (faixa esperada: 4.5 a 6.5)
+    gsr_normalizado = min(max((gsr - 5.5) / 1, -1), 1)  # Transforma a faixa [4.5, 6.5] para [-1, 1]
+
+    # Coeficiente emocional considerando peso maior para BPM
+    coeficiente = (0.7 * bpm_normalizado) + (0.3 * gsr_normalizado)
+
+    # Classificação do sentimento em níveis
+    if coeficiente >= 0.75:
+        return coeficiente, "Muito Positivo"
+    elif coeficiente >= 0.5:
+        return coeficiente, "Médio Positivo"
+    elif coeficiente >= 0.25:
+        return coeficiente, "Pouco Positivo"
+    elif -0.25 < coeficiente < 0.25:
+        return coeficiente, "Neutro"
+    elif coeficiente <= -0.75:
+        return coeficiente, "Muito Negativo"
+    elif coeficiente <= -0.5:
+        return coeficiente, "Médio Negativo"
+    elif coeficiente <= -0.25:
+        return coeficiente, "Pouco Negativo"
+
+    return coeficiente, "Neutro"
 
 
+
+'''
 class TrainingWidget(QWidget):
     def __init__(self, parent, num_people, names, mode, collection_time, serial_port):
         super().__init__(parent)
@@ -212,8 +246,7 @@ class TrainingWidget(QWidget):
         if hasattr(self, 'media_player') and self.media_player.state() == QMediaPlayer.PlayingState:
             self.media_player.stop()
         event.accept()
-
-
+'''
 
 
 
@@ -240,7 +273,7 @@ class SetupWidget(QWidget):
         # Número de Participantes
         self.num_people_label = QLabel("Número de Participantes:")
         self.num_people_spinbox = QSpinBox()
-        self.num_people_spinbox.setRange(1, 8)
+        self.num_people_spinbox.setRange(1, 2)
         self.num_people_spinbox.valueChanged.connect(self.update_name_fields)
         layout.addWidget(self.num_people_label)
         layout.addWidget(self.num_people_spinbox)
@@ -265,7 +298,7 @@ class SetupWidget(QWidget):
                 # Número de estímulos
         self.num_stimuli_label = QLabel("Quantos estímulos deseja apresentar?")
         self.num_stimuli_spinbox = QSpinBox()
-        self.num_stimuli_spinbox.setRange(1, 10)  # Máximo de 10 estímulos
+        self.num_stimuli_spinbox.setRange(0, 10)  # Máximo de 10 estímulos
         self.num_stimuli_spinbox.valueChanged.connect(self.create_stimuli_fields)
         layout.addWidget(self.num_stimuli_label)
         layout.addWidget(self.num_stimuli_spinbox)
@@ -457,13 +490,19 @@ class SetupWidget(QWidget):
             return
 
         # Passa para o MainApp
-        self.parent.start_training_screen(
+        try :
+            serial_connection = serial.Serial(self.selected_port, 115200, timeout=1)
+        except Exception as e:
+            QMessageBox.critical(self, "Erro", f"Não foi possível abrir a conexão serial.\nErro: {e}")
+            return  # Impede que prossiga se der erro
+        self.parent.start_main_window(
             num_people,
             participant_names,
             self.collection_mode,
             int(self.collection_time) if self.collection_time else None,
-            self.selected_port  # Porta serial selecionada
+            serial_connection  # Passando o objeto de conexão serial
         )
+
 
 
 class StimulusWindow(QWidget):
@@ -545,10 +584,24 @@ class RealTimeEmotionWidget(QWidget):
         if not self.serial_connection or not self.serial_connection.is_open:
             print("Erro: Conexão serial não está aberta.")
 
-        self.scores = {name: [] for name in self.names}
+        self.scores = {name: [] for name in self.names[:2]}
         self.gsr_ecg_values = []
-        self.sentiment_counts = {name: {"Alegria": 0, "Tristeza": 0, "Neutro": 0, "Terror": 0} for name in self.names}
-        self.consolidated_sentiments = {"Alegria": 0, "Tristeza": 0, "Neutro": 0, "Terror": 0}
+        # Inicializa os contadores de sentimentos individuais
+        self.sentiment_counts = {
+            name: {
+                "Muito Positivo": 0, "Médio Positivo": 0, "Pouco Positivo": 0,
+                "Neutro": 0,
+                "Pouco Negativo": 0, "Médio Negativo": 0, "Muito Negativo": 0
+            }
+            for name in self.names
+        }
+
+        # Inicializa os contadores de sentimentos consolidados
+        self.consolidated_sentiments = {
+            "Muito Positivo": 0, "Médio Positivo": 0, "Pouco Positivo": 0,
+            "Neutro": 0,
+            "Pouco Negativo": 0, "Médio Negativo": 0, "Muito Negativo": 0
+        }
 
 
 
@@ -571,27 +624,37 @@ class RealTimeEmotionWidget(QWidget):
         
         print(f"Passando sequência de estímulos para StimulusWindow: {self.stimuli_sequence}")  # 🔍 Debug
         
-        if not self.stimuli_sequence:
-            print("Erro: Nenhum estímulo foi passado para StimulusWindow!")  # 🔍 Debug
+        if self.stimuli_sequence:
+            self.stimulus_window = StimulusWindow(self.stimuli_sequence)
+            self.stimulus_window.show()
+        else:
             QMessageBox.critical(self, "Erro", "Nenhum estímulo foi armazenado corretamente!")
-            return
+
 
         # Criar a janela de estímulos corretamente
         self.stimulus_window = StimulusWindow(self.stimuli_sequence)
         self.stimulus_window.show()
 
         # Gráficos de Índice Emocional
+        # Gráficos de Índice Emocional
         self.figures = {}
         self.axes = {}
+        self.canvases = {}  # Adicionando os canvases para serem atualizados corretamente
+
         graph_layout = QGridLayout()
-        for i, name in enumerate(self.names):
+        for i, name in enumerate(self.names[:self.num_people]):  # Garantir que todos os participantes tenham gráficos
             fig, ax = plt.subplots()
             canvas = FigureCanvas(fig)
-            ax.set_title(f"{name} - Índice Emocional")
-            ax.set_ylim(-1, 1)
             self.figures[name] = fig
             self.axes[name] = ax
+            self.canvases[name] = canvas  # Guardar o canvas para ser atualizado depois
+            ax.set_title(f"{name} - Índice Emocional")
+            ax.set_ylim(-1, 1)  # Definir limites para os valores de índice emocional
+            ax.set_xlim(0, 30)  # Definir limite do tempo para 30 segundos
+            ax.set_xlabel("Tempo")
+            ax.set_ylabel("Índice Emocional")
             graph_layout.addWidget(canvas, i // 4, i % 4)
+
         main_layout.addLayout(graph_layout)
 
         # Score Individual e Consolidado
@@ -710,22 +773,31 @@ class RealTimeEmotionWidget(QWidget):
     def go_back(self):
         self.parent().setCurrentIndex(0)
     
-    def export_csv(self):
+    def export_csv(self): 
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         os.makedirs("Resultados", exist_ok=True)
         file_name = f"Resultados/logs_{timestamp}.csv"  # Nome do arquivo com data e hora
         with open(file_name, "w", newline="") as file:
             writer = csv.writer(file)
-            writer.writerow(["Nome", "GSR", "ECG", "EI", "Sentimento"])
-            writer.writerows(self.gsr_ecg_values)
+
+            # Cabeçalhos do CSV
+            writer.writerow(["Nome", "BPM", "GSR", "EI", "Sentimento"])
+
+            # Escrever cada linha com sentimento incluído
+            for entry in self.gsr_ecg_values:
+                name, bpm, gsr = entry
+                coeficiente, sentimento = calcular_coeficiente_emocional(bpm, gsr)
+                writer.writerow([name, bpm, gsr, coeficiente, sentimento])
+
         QMessageBox.information(self, "Exportação Concluída", f"Logs exportados para '{file_name}'.")
+
 
 
     def export_graphics(self):
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         os.makedirs("Graficos", exist_ok=True)
         for name, fig in self.figures.items():
-            file_name = f"Graficos/{name}_{timestamp}.png"  # Nome do arquivo com data e hora
+            file_name = f"Graficos/{name}_{timestamp}.png"  
             fig.savefig(file_name)
         QMessageBox.information(self, "Exportação Concluída", f"Gráficos exportados para a pasta 'Graficos'.")
 
@@ -734,110 +806,119 @@ class RealTimeEmotionWidget(QWidget):
     def toggle_menu(self):
         self.menu_frame.setVisible(not self.menu_frame.isVisible())
 
+
+
+
     def update_scores(self):
         if not self.serial_connection or not self.serial_connection.is_open:
-            print("Conexão serial inativa durante a atualização dos scores.")
-            return
-        else:
-            print("Conexão serial ativa. Lendo dados...")
-
-
-        try:
-            serial_data = self.serial_connection.readline().decode("utf-8").strip()
-            print(f"Dados recebidos da serial: {serial_data}")
-        except Exception as e:
-            print(f"Erro ao ler dados da serial: {e}")
+            print("Conexão serial inativa.")
             return
 
-        # Dicionário para mapear os sentimentos aos valores numéricos
-        sentiment_values = {
-            "Alegria": 1.0,
-            "Tristeza": -0.5,
-            "Terror": -1.0,
-            "Neutro": 0.0
-        }
-
         try:
-            # Lê uma linha da porta serial
-            serial_data = self.serial_connection.readline().decode("utf-8").strip()
+            # Lê todos os dados disponíveis na serial
+            serial_data = self.serial_connection.read(self.serial_connection.in_waiting).decode("utf-8").strip()
             if not serial_data:
                 return
 
-            # Processa cada linha de dados (exemplo de formato: "Pessoa 1 - BPM: 72, GSR: 500")
+            # Processa cada linha recebida
             for line in serial_data.split("\n"):
                 if "Pessoa" in line:
-                    # Extrai o índice da pessoa
-                    person_index = int(line.split(" ")[1]) - 1
-                    if person_index >= self.num_people:
-                        continue  # Ignora se o índice for maior que o número de pessoas
+                    try:
+                        person_index = int(line.split(" ")[1]) - 1
+                        if person_index < 0 or person_index >= self.num_people:
+                            continue  # Ignora se o índice for inválido
 
-                    # Substitui "Pessoa X" pelo nome do participante
-                    name = self.names[person_index]
-                    print(f"Processando dados para {name}")
+                        name = self.names[person_index]
 
+                        # Extrai BPM e GSR com regex
+                        bpm_match = re.search(r"BPM:\s*([\d.]+)", line)
+                        gsr_match = re.search(r"GSR:\s*([\d.]+)", line)
 
-                    # Extrai os valores de BPM e GSR
-                    bpm = float(line.split("BPM:")[1].split(",")[0].strip())
-                    gsr = float(line.split("GSR:")[1].strip())
+                        if bpm_match and gsr_match:
+                            bpm = float(bpm_match.group(1))
+                            gsr = float(gsr_match.group(1)) / 100  # Converte para microSiemens
 
-                    # Determina o sentimento com base nos dados do treinamento
-                    closest_sentiment = None
-                    closest_difference = float('inf')
+                            # **Descartar leituras absurdas**
+                            if bpm < 30 or bpm > 200:  
+                                print(f"⚠️ BPM inválido detectado ({bpm}), descartando leitura...")
+                                continue  
 
-                    for sentimento, data in self.training_data.items():
-                        avg_gsr = sum(data["GSR"]) / len(data["GSR"]) if data["GSR"] else 0
-                        avg_bpm = sum(data["BPM"]) / len(data["BPM"]) if data["BPM"] else 0
-                        difference = abs(avg_gsr - gsr) + abs(avg_bpm - bpm)
-                        if difference < closest_difference:
-                            closest_difference = difference
-                            closest_sentiment = sentimento
+                            # Normaliza BPM alto (acima de 100)
+                            if bpm > 100:
+                                bpm = 100 + (bpm - 100) * 0.5  
+                                bpm = min(bpm, 120)
 
-                    # Atualiza os logs com os dados reais
-                    self.logs.append(f"{name} | BPM: {bpm}, GSR: {gsr}, Sentimento: {closest_sentiment}")
-                    self.logs.ensureCursorVisible()  # Faz com que os logs rolem automaticamente para o final
+                            # Atualiza os logs e gráficos
+                            # Calcula o coeficiente emocional e classifica o sentimento
+                            coeficiente, sentimento = calcular_coeficiente_emocional(bpm, gsr)
+                            # Atualiza a contagem do sentimento individual
+                            if name in self.sentiment_counts:
+                                self.sentiment_counts[name][sentimento] += 1
+                            else:
+                                self.sentiment_counts[name] = {"Muito Positivo": 0, "Médio Positivo": 0, "Pouco Positivo": 0,
+                                                            "Neutro": 0, "Pouco Negativo": 0, "Médio Negativo": 0, "Muito Negativo": 0}
+                                self.sentiment_counts[name][sentimento] += 1
 
-                    self.gsr_ecg_values.append([name, bpm, gsr, closest_sentiment])
-
-                    # Atualiza os gráficos com base nos valores do sentimento
-                    sentiment_value = sentiment_values[closest_sentiment]
-                    self.scores[name].append(sentiment_value)
-                    ax = self.axes[name]
-                    ax.clear()
-                    ax.plot(self.scores[name], label=f"Sentimento: {closest_sentiment}")
-                    ax.set_ylim(-1.1, 1.1)  # Ajusta o eixo Y para refletir os valores dos sentimentos
-                    ax.legend()
-                    self.figures[name].canvas.draw()
-                    self.figures[name].canvas.flush_events()  # Garante que o gráfico seja atualizado em tempo real
-
-                    print(f"Atualizando gráficos para {name} com BPM: {bpm}, GSR: {gsr}, Sentimento: {closest_sentiment}")
+                            # Atualiza a contagem consolidada
+                            self.consolidated_sentiments[sentimento] += 1
 
 
-                    # Atualiza contagens individuais e consolidadas
-                    self.sentiment_counts[name][closest_sentiment] += 1
-                    self.consolidated_sentiments[closest_sentiment] += 1
+                            # Adiciona ao log o BPM, GSR e o sentimento identificado
+                            self.logs.append(f"{name} | BPM: {bpm}, GSR: {gsr*100:.4f}, Sentimento: {sentimento}")
+                            self.logs.ensureCursorVisible()
 
-            # Atualiza a exibição dos sentimentos consolidados e individuais
-            self.update_sentiment_display()
+
+                            self.gsr_ecg_values.append([name, bpm, gsr])
+                            
+                            # Atualiza os gráficos
+                            ax = self.axes[name]
+                            # Atualiza os gráficos com BPM, GSR e o Índice Emocional
+                            ax.clear()
+                            # Lista de índices emocionais para o gráfico
+                            indices_emocionais = [
+                                calcular_coeficiente_emocional(v[1], v[2])[0] for v in self.gsr_ecg_values if v[0] == name
+                            ]
+
+                            # Se houver dados, plota o gráfico
+                            if indices_emocionais:
+                                ax.plot(range(len(indices_emocionais)), indices_emocionais, label="Índice Emocional", color="green")
+
+                            ax.set_ylim(-1, 1)  # Mantém a escala de -1 a 1
+                            ax.set_xlim(max(0, len(indices_emocionais) - 30), len(indices_emocionais))  # Mantém 30 pontos visíveis
+                            ax.legend()
+                            ax.set_title(f"{name} - Índice Emocional")
+                            ax.set_xlabel("Tempo")
+                            ax.set_ylabel("Índice Emocional")
+                            self.canvases[name].draw_idle()
+
+                            # Adiciona a curva do índice emocional
+                            ax.plot(
+                                range(len(self.gsr_ecg_values)),
+                                [calcular_coeficiente_emocional(v[1], v[2])[0] for v in self.gsr_ecg_values if v[0] == name],
+                                label="Índice Emocional",
+                                color="green"
+                            )
+
+                            ax.set_ylim(-1, 1)  # Mantém a escala de -1 a 1
+                            ax.legend()
+                            ax.set_title(f"{name} - Índice Emocional")
+                            ax.set_xlabel("Tempo")
+                            ax.set_ylabel("Índice Emocional")
+                            self.canvases[name].draw_idle()
+
+
+                    except Exception as e:
+                        print(f"❌ Erro ao processar linha da serial: {line}, erro: {e}")
+                        continue  
+                    
+                    
 
         except Exception as e:
-            print(f"Erro ao processar dados da serial: {e}")
+            print(f"❌ Erro na leitura da serial: {e}")
+        self.update_sentiment_display()
 
-        def determine_sentiment(gsr, bpm):
-            closest_sentiment = None
-            closest_difference = float('inf')
 
-            for sentimento, data in self.training_data.items():
-                avg_gsr = sum(data["GSR"]) / len(data["GSR"]) if data["GSR"] else 0
-                avg_bpm = sum(data["BPM"]) / len(data["BPM"]) if data["BPM"] else 0
-                difference = abs(avg_gsr - gsr) + abs(avg_bpm - bpm)
-                if difference < closest_difference:
-                    closest_difference = difference
-                    closest_sentiment = sentimento
 
-            return closest_sentiment
-        self.repaint()  # Força o PyQt a redesenhar os componentes visuais
-
-        print(f"Dados atualizados para gráficos e logs: {self.gsr_ecg_values}")
 
 
 
@@ -846,16 +927,14 @@ class RealTimeEmotionWidget(QWidget):
     def update_sentiment_display(self):
         # Atualiza scores individuais
         for name, label in self.score_labels.items():
-            counts = self.sentiment_counts[name]
-            label.setText(
-                f"{name} | Alegria: {counts['Alegria']} | Tristeza: {counts['Tristeza']} | Neutro: {counts['Neutro']} | Terror: {counts['Terror']}"
-            )
+            if name in self.sentiment_counts:
+                scores = " | ".join([f"{key}: {value}" for key, value in self.sentiment_counts[name].items()])
+                label.setText(f"{name} | {scores}")
 
         # Atualiza o score consolidado
-        consolidated = self.consolidated_sentiments
-        self.consolidated_score_label.setText(
-            f"Consolidado | Alegria: {consolidated['Alegria']} | Tristeza: {consolidated['Tristeza']} | Neutro: {consolidated['Neutro']} | Terror: {consolidated['Terror']}"
-        )
+        consolidated_scores = " | ".join([f"{key}: {value}" for key, value in self.consolidated_sentiments.items()])
+        self.consolidated_score_label.setText(f"Consolidado | {consolidated_scores}")
+
 
 
 
@@ -938,11 +1017,26 @@ class MainApp(QStackedWidget):
             "Terror": {"GSR": [], "BPM": []}
         }
 
-    def start_training_screen(self, num_people, names, mode, collection_time, serial_port):
-        # Inicia a tela de treinamento
-        self.training_widget = TrainingWidget(self, num_people, names, mode, collection_time, serial_port)
-        self.addWidget(self.training_widget)
-        self.setCurrentWidget(self.training_widget)
+    def start_main_window(self, num_people, names, mode, collection_time, serial_connection):
+        """ Inicia a tela de coleta real diretamente, sem passar pelo treinamento. """
+        if not serial_connection or not serial_connection.is_open:
+            QMessageBox.critical(self, "Erro", "A conexão serial não está aberta corretamente.")
+            return
+
+
+        self.serial_connection = serial_connection
+
+        if not self.stimuli_sequence:
+            QMessageBox.critical(self, "Erro", "Nenhum estímulo foi armazenado!")
+            return
+
+        self.realtime_emotion_widget = RealTimeEmotionWidget(
+            num_people, names, self.setup_widget.incentive_file, mode, collection_time, 
+            self.serial_connection, {}, self.stimuli_sequence  # Removendo dados de treinamento
+        )
+        self.addWidget(self.realtime_emotion_widget)
+        self.setCurrentWidget(self.realtime_emotion_widget)
+
 
 
     def save_training_data(self, gsr, bpm, current_time):
@@ -1004,8 +1098,6 @@ class MainApp(QStackedWidget):
 
         self.stimulus_window = StimulusWindow(stimuli_sequence)
         self.stimulus_window.show()
-
-
 
 
 
